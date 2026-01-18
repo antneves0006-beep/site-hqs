@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Publicação de Livros e HQs</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; }
+    header { background:#2c3e50; color:white; padding:15px; text-align:center; }
+    main { max-width:900px; margin:auto; padding:15px; }
+    img { max-width:100%; border-radius:5px; }
+    form, .post { background:white; padding:15px; border-radius:5px; margin-top:15px; }
+    input, textarea, select, button { width:100%; padding:10px; margin-top:10px; font-size:16px; }
+    button { background:#3498db; color:white; border:none; cursor:pointer; }
+    button:hover { background:#2980b9; }
+    .linha { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+    .tipo { font-size:14px; color:#555; }
+    @media(max-width:600px){ header h1{font-size:22px;} }
+  </style>
+</head>
+<body>
+<header>
+  <h1>📚 Publicação de Livros e HQs</h1>
+  <p id="usuarioLogado"></p>
+</header>
+
+<main>
+  <!-- LOGIN -->
+  <form id="loginForm">
+    <h2>Login</h2>
+    <input id="loginNome" placeholder="Usuário" required>
+    <input id="loginSenha" type="password" placeholder="Senha" required>
+    <button>Entrar / Registrar</button>
+  </form>
+
+  <!-- PUBLICAÇÃO -->
+  <form id="postForm" style="display:none">
+    <h2>Nova Publicação</h2>
+    <input id="titulo" placeholder="Título da obra" required>
+    <input id="autor" placeholder="Autor" required>
+    <input id="capitulo" placeholder="Capítulo" required>
+    <select id="tipo">
+      <option>Livro</option>
+      <option>HQ</option>
+    </select>
+    <textarea id="conteudo" rows="6" placeholder="Texto ou descrição"></textarea>
+    <input type="file" id="imagens" accept="image/*" multiple>
+    <button>Publicar</button>
+  </form>
+
+  <h2>Obras</h2>
+  <div id="obras"></div>
+
+  <h2>Capítulos</h2>
+  <div id="posts"></div>
+</main>
+
+<script>
+/************ DADOS ************/
+let usuarios = JSON.parse(localStorage.getItem('usuarios')) || {};
+let usuario = localStorage.getItem('usuario');
+let editandoCapitulo = null;
+let tituloAtual = null;
+
+/************ ELEMENTOS ************/
+const loginForm = document.getElementById('loginForm');
+const postForm = document.getElementById('postForm');
+const usuarioLogado = document.getElementById('usuarioLogado');
+const obrasDiv = document.getElementById('obras');
+const postsDiv = document.getElementById('posts');
+
+/************ LOGIN ************/
+if (usuario) iniciarSessao();
+
+loginForm.onsubmit = e => {
+  e.preventDefault();
+  const nome = loginNome.value;
+  const senha = loginSenha.value;
+
+  if (!usuarios[nome]) usuarios[nome] = senha;
+  else if (usuarios[nome] !== senha) return alert('Senha incorreta');
+
+  localStorage.setItem('usuarios', JSON.stringify(usuarios));
+  usuario = nome;
+  localStorage.setItem('usuario', usuario);
+  iniciarSessao();
+};
+
+function iniciarSessao(){
+  usuarioLogado.textContent = 'Logado como: ' + usuario;
+  loginForm.style.display = 'none';
+  postForm.style.display = 'block';
+  carregarObras();
+}
+
+/************ CARREGAR OBRAS ************/
+function carregarObras(){
+  obrasDiv.innerHTML = postsDiv.innerHTML = '';
+  const posts = JSON.parse(localStorage.getItem('posts')) || [];
+  const obras = {};
+
+  posts.forEach(p => {
+    p.paginaAtual ??= 0;
+    (obras[p.titulo] ??= []).push(p);
+  });
+
+  for (const titulo in obras){
+    const d = document.createElement('div');
+    d.className = 'post';
+    d.innerHTML = `<h3>${titulo}</h3><button onclick="mostrarCapitulos('${titulo}')">Ver capítulos</button>`;
+    obrasDiv.appendChild(d);
+  }
+
+  window._obras = obras;
+}
+
+/************ CAPÍTULOS ************/
+function mostrarCapitulos(titulo){
+  tituloAtual = titulo;
+  postsDiv.innerHTML = '';
+
+  _obras[titulo].forEach((post, i) => {
+    const div = document.createElement('div');
+    div.className = 'post';
+    div.innerHTML = `
+      <h3>${post.capitulo}</h3>
+      <div class="linha"><button onclick="curtir(${i})">❤️ Curtir</button> <span id="likes-${i}"></span></div>
+      <div class="comentarios" id="comentarios-${i}"></div>
+      <div class="linha">
+        <input type="text" id="comentarioInput-${i}" placeholder="Escreva um comentário">
+        <button onclick="comentar(${i})">💬 Comentar</button>
+      </div>
+      <p class="tipo">(${i})">❤️ Curtir</button> <span id="likes-${i}"></span></div>
+      <p class="tipo">${post.tipo} • ${post.autor} ${post.dono===usuario?'(você)':''}</p>
+      <div class="paginas"></div>
+      ${post.dono===usuario?`
+      <div class="linha">
+        <input type="file" accept="image/*" onchange="trocarPagina(${i},this)">
+        <button onclick="paginaCima(${i})">⬆️</button>
+        <button onclick="paginaBaixo(${i})">⬇️</button>
+        <button onclick="inserirPagina(${i})">➕ Inserir página</button>(${i})">⬇️</button>
+        <button onclick="apagarPagina(${i})">🗑️</button>
+      </div>`:''}
+      <div class="linha">
+        <button onclick="anterior(${i})">⬅</button>
+        <button onclick="proxima(${i})">➡</button>
+      </div>
+      <p>${post.conteudo.replace(/\n/g,'<br>')}</p>`;
+
+    postsDiv.appendChild(div);
+    atualizarPagina(i);
+  });
+}
+
+/************ PÁGINAS ************/
+function atualizarPagina(i){
+  const post = _obras[tituloAtual][i];
+  const div = postsDiv.children[i].querySelector('.paginas');
+  div.innerHTML = post.imagens?.length ? `<img src="${post.imagens[post.paginaAtual]}">` : '';
+}
+
+function anterior(i){ const p=_obras[tituloAtual][i]; if(p.paginaAtual>0){p.paginaAtual--; atualizarPagina(i);} }
+function proxima(i){ const p=_obras[tituloAtual][i]; if(p.paginaAtual<p.imagens.length-1){p.paginaAtual++; atualizarPagina(i);} }
+
+function trocarPagina(i,input){
+  const file=input.files[0]; if(!file) return;
+  const r=new FileReader();
+  r.onload=()=>{ _obras[tituloAtual][i].imagens[_obras[tituloAtual][i].paginaAtual]=r.result; salvarTudo(); atualizarPagina(i); };
+  r.readAsDataURL(file);
+}
+
+function apagarPagina(i){
+  const p=_obras[tituloAtual][i];
+  if(p.imagens.length<=1) return alert('Mínimo 1 página');
+  p.imagens.splice(p.paginaAtual,1);
+  if(p.paginaAtual>0) p.paginaAtual--;
+  salvarTudo(); atualizarPagina(i);
+}
+
+function paginaCima(i){
+  const p=_obras[tituloAtual][i];
+  if(p.paginaAtual===0) return;
+  const j=p.paginaAtual;
+  [p.imagens[j-1],p.imagens[j]]=[p.imagens[j],p.imagens[j-1]];
+  p.paginaAtual--; salvarTudo(); atualizarPagina(i);
+}
+
+function inserirPagina(i){
+  const input=document.createElement('input');
+  input.type='file';
+  input.accept='image/*';
+  input.onchange=()=>{
+    const file=input.files[0]; if(!file) return;
+    const r=new FileReader();
+    r.onload=()=>{
+      const p=_obras[tituloAtual][i];
+      p.imagens.splice(p.paginaAtual+1,0,r.result);
+      salvarTudo();
+      atualizarPagina(i);
+      alert('Página inserida com sucesso');
+    };
+    r.readAsDataURL(file);
+  };
+  input.click();
+}
+
+function paginaBaixo(i){
+  const p=_obras[tituloAtual][i];
+  if(p.paginaAtual===p.imagens.length-1) return;
+  const j=p.paginaAtual;
+  [p.imagens[j],p.imagens[j+1]]=[p.imagens[j+1],p.imagens[j]];
+  p.paginaAtual++; salvarTudo(); atualizarPagina(i);
+}
+
+/************ PUBLICAR ************/
+postForm.onsubmit = e => {
+  e.preventDefault();
+  const files = imagens.files;
+  const imgs=[]; let c=0;
+  if(files.length){
+    [...files].forEach(f=>{ const r=new FileReader(); r.onload=()=>{imgs.push(r.result); if(++c===files.length) salvar(imgs);}; r.readAsDataURL(f); });
+  } else salvar([]);
+};
+
+function comentar(i){
+  const input=document.getElementById('comentarioInput-'+i);
+  const texto=input.value.trim();
+  if(!texto) return;
+  const post=_obras[tituloAtual][i];
+  post.comentarios ??= [];
+  post.comentarios.push({usuario, texto});
+  salvarTudo();
+  input.value='';
+  renderComentarios(i);
+}
+
+function renderComentarios(i){
+  const post=_obras[tituloAtual][i];
+  const div=document.getElementById('comentarios-'+i);
+  if(!div) return;
+  div.innerHTML='';
+  (post.comentarios||[]).forEach(c=>{
+    const p=document.createElement('p');
+    p.innerHTML='<strong>'+c.usuario+':</strong> '+c.texto;
+    div.appendChild(p);
+  });
+}
+
+function curtir(i){
+  const post=_obras[tituloAtual][i];
+  post.likes ??= [];
+  if(post.likes.includes(usuario)) return alert('Você já curtiu');
+  post.likes.push(usuario);
+  salvarTudo();
+  document.getElementById('likes-'+i).textContent=post.likes.length+' curtidas';
+}
+
+function salvar(imagens){
+  const posts = JSON.parse(localStorage.getItem('posts')) || [];
+  posts.unshift({ titulo:titulo.value, autor:autor.value, capitulo:capitulo.value, tipo:tipo.value, conteudo:conteudo.value, imagens, dono:usuario, paginaAtual:0 });
+  localStorage.setItem('posts', JSON.stringify(posts));
+  postForm.reset(); carregarObras();
+}
+
+function salvarTudo(){
+  const lista=[];
+  for(const t in _obras) lista.push(..._obras[t]);
+  localStorage.setItem('posts', JSON.stringify(lista));
+}
+</script>
+</body>
+</html>
